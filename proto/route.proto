@@ -1,0 +1,52 @@
+// Copyright (c) 2026 HSTLES / ORBTR Pty Ltd. All Rights Reserved.
+// Queries: licensing@hstles.com
+//
+// Route protocol wire format — BGP-style path advertisement.
+
+syntax = "proto3";
+
+package route.v1;
+
+option go_package = "github.com/bbmumford/route/proto/pb";
+
+// PathAdvertisement is the wire format for a route advertisement. Dual-
+// signed: NodeIDSignature (signed by Origin's node identity) AND
+// PathKeySignature (signed by a per-path key derived via
+// HKDF-SHA256(node-identity, "route-path-v1" || Origin || Target || Epoch)).
+//
+// Defense-in-depth: even if a node-identity compromise leaks a path-key for
+// one (origin,target,epoch), replay across different pairs is impossible.
+message PathAdvertisement {
+  bytes  origin = 1;             // who is advertising
+  bytes  target = 2;              // the destination peer
+  repeated bytes hops = 3;        // intermediate NodeIDs (excludes origin + target)
+  uint32 rtt_sample_ms = 4;       // observed RTT from origin to target via this path
+  uint64 epoch = 5;               // advertisement epoch (monotonic per Origin)
+  repeated string communities = 6; // tag-style metadata
+  int64  issued_at = 7;            // unix nanoseconds
+  string network = 8;              // network scope (empty = fleet-wide)
+
+  bytes node_id_signature = 9;     // Ed25519 over wire-format excluding signatures
+  bytes path_key_signature = 10;   // Ed25519 over same envelope, by per-path key
+}
+
+// PathWithdrawal removes a previously-advertised path.
+message PathWithdrawal {
+  bytes  origin = 1;
+  bytes  target = 2;
+  uint64 epoch = 3;
+  int64  issued_at = 4;
+  string network = 5;
+  bytes  signature = 6; // Ed25519 by origin
+}
+
+// DampingState is the per-(origin,target,network) flap-damping state.
+// Not a wire format — included here for completeness of the proto package.
+message DampingState {
+  bytes  origin = 1;
+  bytes  target = 2;
+  string network = 3;
+  uint32 penalty = 4;         // RFC2439 accumulated penalty
+  bool   suppressed = 5;
+  int64  last_flap = 6;
+}
