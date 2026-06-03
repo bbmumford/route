@@ -45,8 +45,15 @@ type PathAdvertisement struct {
 	Network          string                 `protobuf:"bytes,8,opt,name=network,proto3" json:"network,omitempty"`                                              // network scope (empty = fleet-wide)
 	NodeIdSignature  []byte                 `protobuf:"bytes,9,opt,name=node_id_signature,json=nodeIdSignature,proto3" json:"node_id_signature,omitempty"`     // Ed25519 over wire-format excluding signatures
 	PathKeySignature []byte                 `protobuf:"bytes,10,opt,name=path_key_signature,json=pathKeySignature,proto3" json:"path_key_signature,omitempty"` // Ed25519 over same envelope, by per-path key
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// pub_key is the Origin's Ed25519 public key. Required because NodeIDs in
+	// this codebase are one-way SHA-256 fingerprints (vl1_<hex>) — the verifier
+	// cannot derive the public key from the NodeID alone. Sender stamps this
+	// before signing; signing input MUST include pub_key to close the rebind
+	// attack (an attacker who swaps pub_key + re-signs with their own key would
+	// otherwise produce a valid signature). See ledger v0.0.15 SignRecord fix.
+	PubKey        []byte `protobuf:"bytes,11,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PathAdvertisement) Reset() {
@@ -149,6 +156,13 @@ func (x *PathAdvertisement) GetPathKeySignature() []byte {
 	return nil
 }
 
+func (x *PathAdvertisement) GetPubKey() []byte {
+	if x != nil {
+		return x.PubKey
+	}
+	return nil
+}
+
 // PathWithdrawal removes a previously-advertised path.
 type PathWithdrawal struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -157,7 +171,8 @@ type PathWithdrawal struct {
 	Epoch         uint64                 `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
 	IssuedAt      int64                  `protobuf:"varint,4,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
 	Network       string                 `protobuf:"bytes,5,opt,name=network,proto3" json:"network,omitempty"`
-	Signature     []byte                 `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"` // Ed25519 by origin
+	Signature     []byte                 `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"`         // Ed25519 by origin
+	PubKey        []byte                 `protobuf:"bytes,7,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"` // Origin's Ed25519 public key — see PathAdvertisement.pub_key
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -230,6 +245,13 @@ func (x *PathWithdrawal) GetNetwork() string {
 func (x *PathWithdrawal) GetSignature() []byte {
 	if x != nil {
 		return x.Signature
+	}
+	return nil
+}
+
+func (x *PathWithdrawal) GetPubKey() []byte {
+	if x != nil {
+		return x.PubKey
 	}
 	return nil
 }
@@ -324,7 +346,7 @@ var File_route_proto protoreflect.FileDescriptor
 
 const file_route_proto_rawDesc = "" +
 	"\n" +
-	"\vroute.proto\x12\broute.v1\"\xc4\x02\n" +
+	"\vroute.proto\x12\broute.v1\"\xdd\x02\n" +
 	"\x11PathAdvertisement\x12\x16\n" +
 	"\x06origin\x18\x01 \x01(\fR\x06origin\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\fR\x06target\x12\x12\n" +
@@ -336,14 +358,16 @@ const file_route_proto_rawDesc = "" +
 	"\anetwork\x18\b \x01(\tR\anetwork\x12*\n" +
 	"\x11node_id_signature\x18\t \x01(\fR\x0fnodeIdSignature\x12,\n" +
 	"\x12path_key_signature\x18\n" +
-	" \x01(\fR\x10pathKeySignature\"\xab\x01\n" +
+	" \x01(\fR\x10pathKeySignature\x12\x17\n" +
+	"\apub_key\x18\v \x01(\fR\x06pubKey\"\xc4\x01\n" +
 	"\x0ePathWithdrawal\x12\x16\n" +
 	"\x06origin\x18\x01 \x01(\fR\x06origin\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\fR\x06target\x12\x14\n" +
 	"\x05epoch\x18\x03 \x01(\x04R\x05epoch\x12\x1b\n" +
 	"\tissued_at\x18\x04 \x01(\x03R\bissuedAt\x12\x18\n" +
 	"\anetwork\x18\x05 \x01(\tR\anetwork\x12\x1c\n" +
-	"\tsignature\x18\x06 \x01(\fR\tsignature\"\xaf\x01\n" +
+	"\tsignature\x18\x06 \x01(\fR\tsignature\x12\x17\n" +
+	"\apub_key\x18\a \x01(\fR\x06pubKey\"\xaf\x01\n" +
 	"\fDampingState\x12\x16\n" +
 	"\x06origin\x18\x01 \x01(\fR\x06origin\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\fR\x06target\x12\x18\n" +

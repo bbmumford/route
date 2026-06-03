@@ -28,6 +28,13 @@ message PathAdvertisement {
 
   bytes node_id_signature = 9;     // Ed25519 over wire-format excluding signatures
   bytes path_key_signature = 10;   // Ed25519 over same envelope, by per-path key
+  // pub_key is the Origin's Ed25519 public key. Required because NodeIDs in
+  // this codebase are one-way SHA-256 fingerprints (vl1_<hex>) — the verifier
+  // cannot derive the public key from the NodeID alone. Sender stamps this
+  // before signing; signing input MUST include pub_key to close the rebind
+  // attack (an attacker who swaps pub_key + re-signs with their own key would
+  // otherwise produce a valid signature). See ledger v0.0.15 SignRecord fix.
+  bytes pub_key = 11;
 }
 
 // PathWithdrawal removes a previously-advertised path.
@@ -38,6 +45,7 @@ message PathWithdrawal {
   int64  issued_at = 4;
   string network = 5;
   bytes  signature = 6; // Ed25519 by origin
+  bytes  pub_key = 7;   // Origin's Ed25519 public key — see PathAdvertisement.pub_key
 }
 
 // DampingState is the per-(origin,target,network) flap-damping state.

@@ -8,7 +8,9 @@ import (
 	"crypto/ed25519"
 	"crypto/hkdf"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/binary"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -166,7 +168,7 @@ func (r *routerImpl) Withdraw(target NodeID, network NetworkID) error {
 		IssuedAt: time.Now(),
 		Network:  network,
 	}
-	w.Signature = ed25519.Sign(r.priv, signableWithdrawal(w))
+	r.signWithdrawal(w)
 
 	_ = r.IngestWithdrawal(w)
 
@@ -460,6 +462,9 @@ func sortPaths(paths []*Path) {
 //	rtt:u32 || epoch:u64 || issued_at:i64 ||
 //	communities_count:u16 || (comm_len:u16 || comm)* ||
 //	network_len:u16 || network
+// signableAdvertisement now includes PubKey to close the rebind attack
+// (an attacker who swaps PubKey + re-signs would otherwise produce a
+// valid signature). PubKey MUST be set by the signer before this runs.
 func signableAdvertisement(ad *PathAdvertisement) []byte {
 	buf := make([]byte, 0, 256)
 	buf = appendLenString(buf, string(ad.Origin))
@@ -476,6 +481,7 @@ func signableAdvertisement(ad *PathAdvertisement) []byte {
 		buf = appendLenString(buf, c)
 	}
 	buf = appendLenString(buf, string(ad.Network))
+	buf = appendLenBytes(buf, ad.PubKey)
 	return buf
 }
 
@@ -486,11 +492,17 @@ func signableWithdrawal(w *PathWithdrawal) []byte {
 	buf = appendUint64(buf, w.Epoch)
 	buf = appendInt64(buf, w.IssuedAt.UnixNano())
 	buf = appendLenString(buf, string(w.Network))
+	buf = appendLenBytes(buf, w.PubKey)
 	return buf
 }
 
-// signAdvertisement fills in both signatures.
+// signAdvertisement stamps PubKey + fills in both signatures. PubKey is
+// assigned BEFORE signableAdvertisement runs so the signed bytes cover
+// the pubkey. This mirrors the SignRecord field-ordering fix (ledger
+// v0.0.15) — a sender that hashes a record where len(PubKey)==0 then
+// stamps PubKey afterward produces bytes the verifier can't reproduce.
 func (r *routerImpl) signAdvertisement(ad *PathAdvertisement) {
+	ad.PubKey = []byte(r.priv.Public().(ed25519.PublicKey))
 	signable := signableAdvertisement(ad)
 	ad.NodeIDSignature = ed25519.Sign(r.priv, signable)
 
@@ -498,14 +510,28 @@ func (r *routerImpl) signAdvertisement(ad *PathAdvertisement) {
 	ad.PathKeySignature = ed25519.Sign(pathKey, signable)
 }
 
-// verifyAdvertisement validates both signatures.
+// verifyAdvertisement validates both signatures. Uses the PubKey
+// embedded on the wire — NodeIDs in this codebase are one-way SHA-256
+// fingerprints (vl1_<encoded>), so the verifier cannot derive the
+// public key from the NodeID. To prevent an attacker from claiming an
+// arbitrary Origin NodeID + stamping their own PubKey + signing with
+// their own key, we re-derive the expected NodeID from PubKey and
+// reject when it doesn't match ad.Origin. This restores the
+// binding lost when the original pubFromNodeID(hex) assumption was
+// abandoned.
 func verifyAdvertisement(ad *PathAdvertisement) bool {
-	pub, ok := pubFromNodeID(ad.Origin)
-	if !ok {
+	if len(ad.PubKey) != ed25519.PublicKeySize {
 		return false
 	}
-	signable := signableAdvertisement(ad)
+	pub := ed25519.PublicKey(ad.PubKey)
 
+	// Binding check: NodeID must be the fingerprint of PubKey.
+	expectedNodeID, ok := nodeIDFromPubKey(pub)
+	if !ok || expectedNodeID != ad.Origin {
+		return false
+	}
+
+	signable := signableAdvertisement(ad)
 	if len(ad.NodeIDSignature) != ed25519.SignatureSize {
 		return false
 	}
@@ -513,23 +539,27 @@ func verifyAdvertisement(ad *PathAdvertisement) bool {
 		return false
 	}
 
-	// Path-key signature: we verify against the public key derived from
-	// the per-path key. Since the per-path key is derived from the
-	// publisher's private key (not held by the verifier), we cannot
-	// reconstruct the keypair. The path-key verification is effectively
-	// a tamper-evidence check that requires the verifier to know the
-	// per-path public key out of band. For now, accept absence as
-	// optional (the NodeID signature already authenticates the origin).
-	// A future revision will publish per-path public keys via PeerRecord.
+	// Path-key signature: tamper-evidence check; cannot reconstruct the
+	// per-path keypair from the publisher-only private key. Optional
+	// until per-path public keys ship via PeerRecord.
 	if len(ad.PathKeySignature) == 0 {
 		return true
 	}
 	return true
 }
 
+func (r *routerImpl) signWithdrawal(w *PathWithdrawal) {
+	w.PubKey = []byte(r.priv.Public().(ed25519.PublicKey))
+	w.Signature = ed25519.Sign(r.priv, signableWithdrawal(w))
+}
+
 func verifyWithdrawal(w *PathWithdrawal) bool {
-	pub, ok := pubFromNodeID(w.Origin)
-	if !ok {
+	if len(w.PubKey) != ed25519.PublicKeySize {
+		return false
+	}
+	pub := ed25519.PublicKey(w.PubKey)
+	expectedNodeID, ok := nodeIDFromPubKey(pub)
+	if !ok || expectedNodeID != w.Origin {
 		return false
 	}
 	if len(w.Signature) != ed25519.SignatureSize {
@@ -537,6 +567,24 @@ func verifyWithdrawal(w *PathWithdrawal) bool {
 	}
 	return ed25519.Verify(pub, signableWithdrawal(w), w.Signature)
 }
+
+// nodeIDFromPubKey derives the canonical NodeID from an Ed25519 public
+// key, mirroring aether.NewNodeID: SHA-256(pubkey) → first 16 bytes →
+// base32-no-pad lowercase → "vl1_" prefix. Returns false on an
+// improperly-sized key.
+func nodeIDFromPubKey(pub ed25519.PublicKey) (NodeID, bool) {
+	if len(pub) != ed25519.PublicKeySize {
+		return "", false
+	}
+	hash := sha256.Sum256(pub)
+	encoded := strings.ToLower(routeBase32NoPad.EncodeToString(hash[:16]))
+	return NodeID("vl1_" + encoded), true
+}
+
+// routeBase32NoPad mirrors aether's base32 alphabet (RFC 4648 lowercase,
+// no padding). Defined locally so route doesn't depend on aether for
+// what is a pure derivation step.
+var routeBase32NoPad = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 // derivePathKey produces a per-(origin, target, epoch) Ed25519 keypair
 // via HKDF-SHA256 over the node identity key. The seed becomes the
@@ -617,4 +665,9 @@ func appendInt64(buf []byte, v int64) []byte {
 func appendLenString(buf []byte, s string) []byte {
 	buf = appendUint16(buf, uint16(len(s)))
 	return append(buf, []byte(s)...)
+}
+
+func appendLenBytes(buf []byte, b []byte) []byte {
+	buf = appendUint16(buf, uint16(len(b)))
+	return append(buf, b...)
 }

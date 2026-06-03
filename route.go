@@ -30,8 +30,15 @@ type PathAdvertisement struct {
 	IssuedAt     time.Time
 	Network      NetworkID // network scope (empty = fleet-wide)
 
-	NodeIDSignature   []byte // Ed25519 over wire-format excluding signatures
-	PathKeySignature  []byte // Ed25519 over same envelope, by per-path key
+	NodeIDSignature  []byte // Ed25519 over wire-format excluding signatures
+	PathKeySignature []byte // Ed25519 over same envelope, by per-path key
+
+	// PubKey is the Origin's Ed25519 public key. Required because the
+	// codebase's NodeIDs are one-way SHA-256 fingerprints (vl1_<hex>) —
+	// the verifier cannot derive the public key from the NodeID alone.
+	// Stamped by signAdvertisement BEFORE the signature input is computed
+	// so signableAdvertisement covers PubKey (closes the rebind attack).
+	PubKey []byte
 }
 
 // PathWithdrawal removes a previously-advertised path. Sent when Origin
@@ -39,10 +46,11 @@ type PathAdvertisement struct {
 type PathWithdrawal struct {
 	Origin    NodeID
 	Target    NodeID
-	Epoch     uint64    // matches the withdrawn advertisement's epoch
+	Epoch     uint64 // matches the withdrawn advertisement's epoch
 	IssuedAt  time.Time
 	Network   NetworkID
 	Signature []byte // Ed25519 over wire-format
+	PubKey    []byte // Origin's Ed25519 public key — see PathAdvertisement.PubKey
 }
 
 // Path represents a selected path in the forwarding table. Not a wire format.
