@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -52,6 +53,46 @@ type routerImpl struct {
 
 	// Out-of-band publisher for advertisements. Set by Wire().
 	publisher AdvertisementPublisher
+
+	// Advertise-path counters. Exposed via Stats() so operators can
+	// distinguish "no advertisements being made" from "advertisements
+	// are being suppressed" from "advertisements are made but never
+	// publish onto the swarm". Each Advertise() always bumps advCalls
+	// and then exactly one of {advLocallyIngestedOK, advSuppressed} for
+	// the ingest side, and at most one of {advPublishSkippedNilPublisher,
+	// advPublishError} for the publish side. Loop / TooLong / Signature
+	// failures bump advCalls but no terminal counter — they read as
+	// "called but nothing reported", which is the right signal.
+	advCalls                      atomic.Uint64
+	advLocallyIngestedOK          atomic.Uint64
+	advSuppressed                 atomic.Uint64
+	advPublishSkippedNilPublisher atomic.Uint64
+	advPublishError               atomic.Uint64
+}
+
+// RouterStats is a point-in-time snapshot of the router's Advertise-path
+// counters. Returned by routerImpl.Stats() and surfaced via the
+// help.orbtr.io /swarm-debug monitoring endpoint so operators can
+// distinguish "no advertisements" from "advertisements suppressed by
+// damping" from "advertisements never reached the swarm publisher".
+type RouterStats struct {
+	AdvertiseCalls                uint64 `json:"advertiseCalls"`
+	AdvertiseLocallyIngestedOK    uint64 `json:"advertiseLocallyIngestedOK"`
+	AdvertiseSuppressed           uint64 `json:"advertiseSuppressed"`
+	AdvertisePublishSkippedNilPub uint64 `json:"advertisePublishSkippedNilPublisher"`
+	AdvertisePublishError         uint64 `json:"advertisePublishError"`
+}
+
+// Stats returns a point-in-time snapshot of the router's Advertise-path
+// counters. Safe for concurrent use; reads are lock-free atomic loads.
+func (r *routerImpl) Stats() RouterStats {
+	return RouterStats{
+		AdvertiseCalls:                r.advCalls.Load(),
+		AdvertiseLocallyIngestedOK:    r.advLocallyIngestedOK.Load(),
+		AdvertiseSuppressed:           r.advSuppressed.Load(),
+		AdvertisePublishSkippedNilPub: r.advPublishSkippedNilPublisher.Load(),
+		AdvertisePublishError:         r.advPublishError.Load(),
+	}
 }
 
 // AdvertisementPublisher is the surface routerImpl uses to inject signed
@@ -111,10 +152,100 @@ func (r *routerImpl) SetPublisher(p AdvertisementPublisher) {
 	r.mu.Unlock()
 }
 
+// reconvergeInterval is the base period between background re-emissions
+// of locally-originated advertisements + damping decay. Jittered by
+// reconvergeJitter so a freshly-restarted fleet doesn't synchronise its
+// broadcasts. Tuned to match swarm anti-entropy cadence — fast enough
+// that a join during a publisher hiccup is recovered within ~1 minute,
+// slow enough that a stable fleet doesn't waste topic bandwidth.
+const (
+	reconvergeInterval = 45 * time.Second
+	reconvergeJitter   = 15 * time.Second
+)
+
+// Start runs the background reconvergence loop until ctx is cancelled.
+// Every reconvergeInterval (jittered) it:
+//   1. Decays damping penalty for every tracked pathKey so suppressed
+//      entries eventually become eligible again under the RFC2439 reuse
+//      threshold.
+//   2. Re-emits Advertise for every locally-originated, non-suppressed
+//      path. Closes the gap where a peer joined just after we last
+//      published and the swarm anti-entropy gossip hasn't caught it yet,
+//      or where the originating Advertise raced an empty publisher.
+//
+// Lock discipline: snapshot the (target, network) pairs to re-emit under
+// r.mu, then drop the lock before calling Advertise — Advertise itself
+// takes r.mu in IngestAdvertisement and would deadlock if we held it.
 func (r *routerImpl) Start(ctx context.Context) error {
 	r.startCtx, r.startCancel = context.WithCancel(ctx)
-	<-r.startCtx.Done()
-	return nil
+	defer r.startCancel()
+
+	for {
+		// Jittered next-tick so independently-started routers desync.
+		jitter := time.Duration(rand.Int64N(int64(2*reconvergeJitter))) - reconvergeJitter
+		next := reconvergeInterval + jitter
+		if next < time.Second {
+			next = time.Second
+		}
+		timer := time.NewTimer(next)
+
+		select {
+		case <-r.startCtx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
+
+		r.reconvergeOnce()
+	}
+}
+
+// reconvergeOnce performs one decay + re-emit pass. Extracted from
+// Start so unit tests can drive it directly without running the timer.
+func (r *routerImpl) reconvergeOnce() {
+	type reemit struct {
+		target  NodeID
+		network NetworkID
+		hops    []NodeID
+	}
+
+	r.mu.Lock()
+	// Decay every damping entry; suppressed entries that fall below the
+	// RFC2439 reuse threshold flip back to usable inside decayPenalty.
+	for _, d := range r.damp {
+		r.decayPenalty(d)
+	}
+
+	// Snapshot the locally-originated, non-suppressed paths. We re-emit
+	// only paths whose Origin is this node — re-emitting paths we
+	// learned from peers would amplify their advertisements without
+	// adding any new information.
+	pending := make([]reemit, 0, len(r.paths))
+	for k, p := range r.paths {
+		if k.Origin != r.localID {
+			continue
+		}
+		if d, ok := r.damp[k]; ok && d.suppressed {
+			continue
+		}
+		// Strip the trailing target hop we appended in IngestAdvertisement
+		// so the re-emit matches the wire shape Advertise expects.
+		hops := p.Hops
+		if len(hops) > 0 && hops[len(hops)-1] == k.Target {
+			hops = hops[:len(hops)-1]
+		}
+		pending = append(pending, reemit{
+			target:  k.Target,
+			network: k.Network,
+			hops:    append([]NodeID(nil), hops...),
+		})
+	}
+	r.mu.Unlock()
+
+	// Re-emit outside the lock — Advertise takes r.mu itself.
+	for _, e := range pending {
+		_ = r.Advertise(e.target, e.hops, e.network)
+	}
 }
 
 func (r *routerImpl) Stop() error {
@@ -129,6 +260,7 @@ func (r *routerImpl) Stop() error {
 
 // Advertise originates a new PathAdvertisement and dispatches it.
 func (r *routerImpl) Advertise(target NodeID, hops []NodeID, network NetworkID, communities ...string) error {
+	r.advCalls.Add(1)
 	if r.containsLoop(hops, target) {
 		return ErrPathLoop
 	}
@@ -148,13 +280,26 @@ func (r *routerImpl) Advertise(target NodeID, hops []NodeID, network NetworkID, 
 	r.signAdvertisement(ad)
 
 	// Update local forwarding immediately so we can use our own path.
-	_ = r.IngestAdvertisement(ad)
+	// Damping-suppressed origin paths are a real operational state we
+	// expose separately so operators can tell "we're calling Advertise
+	// but our own path keeps getting damped" apart from "we never
+	// called Advertise".
+	if ingestErr := r.IngestAdvertisement(ad); ingestErr == ErrPathSuppressed {
+		r.advSuppressed.Add(1)
+	} else if ingestErr == nil {
+		r.advLocallyIngestedOK.Add(1)
+	}
 
 	r.mu.RLock()
 	pub := r.publisher
 	r.mu.RUnlock()
-	if pub != nil {
-		return pub.PublishAdvertisement(ad)
+	if pub == nil {
+		r.advPublishSkippedNilPublisher.Add(1)
+		return nil
+	}
+	if err := pub.PublishAdvertisement(ad); err != nil {
+		r.advPublishError.Add(1)
+		return err
 	}
 	return nil
 }
@@ -297,8 +442,19 @@ func (r *routerImpl) IngestAdvertisement(ad *PathAdvertisement) error {
 		return ErrStaleAdvertisement
 	}
 
+	// Self-originated direct edges (Origin == localID, Hops empty) are
+	// the operator's own first-hop advertisement to a directly-connected
+	// peer — not a flap signal. The operator routinely re-advertises its
+	// direct edges (peer (re)connect, capability change, periodic
+	// refresh), and three near-simultaneous calls for the same peer can
+	// otherwise drive penalty past DampSuppress (default 2000) on the
+	// third Advertise, suppressing the operator's own best path to that
+	// peer. Damping exists to protect against remote flap storms; it
+	// must not silence local truths.
+	selfDirectEdge := ad.Origin == r.localID && len(ad.Hops) == 0
+
 	// Penalty: bump for every new advertisement after the first.
-	if state.lastEpoch > 0 {
+	if state.lastEpoch > 0 && !selfDirectEdge {
 		state.penalty += 1000
 		if state.penalty > r.cfg.DampMaxPenalty {
 			state.penalty = r.cfg.DampMaxPenalty
