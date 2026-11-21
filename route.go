@@ -74,7 +74,8 @@ const (
 
 // Router is the public route API.
 type Router interface {
-	// Start runs the router until ctx is cancelled.
+	// Start runs the router until ctx is cancelled or Stop is called. A
+	// Start after Stop returns at once.
 	Start(ctx context.Context) error
 
 	// Stop shuts down the engine. Idempotent.

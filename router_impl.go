@@ -52,8 +52,11 @@ type routerImpl struct {
 	localEpoch atomic.Uint64
 	transit    atomic.Uint32
 
-	startCtx    context.Context
-	startCancel context.CancelFunc
+	// lifeMu orders Start's check of stopped and its write of startCancel
+	// against Stop's read of startCancel, so a Stop that runs before, during
+	// or after Start's setup always ends that Start.
+	lifeMu      sync.Mutex
+	startCancel context.CancelFunc // cancels the running Start's loop; guarded by lifeMu
 	stopped     atomic.Bool
 
 	netCtx NetworkContextProvider
@@ -185,9 +188,19 @@ const (
 // Lock discipline: snapshot the (target, network) pairs to re-emit under
 // r.mu, then drop the lock before calling Advertise — Advertise itself
 // takes r.mu in IngestAdvertisement and would deadlock if we held it.
+//
+// Start returns at once when Stop has already run, and Stop ends a running
+// Start.
 func (r *routerImpl) Start(ctx context.Context) error {
-	r.startCtx, r.startCancel = context.WithCancel(ctx)
-	defer r.startCancel()
+	r.lifeMu.Lock()
+	if r.stopped.Load() {
+		r.lifeMu.Unlock()
+		return nil
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	r.startCancel = cancel
+	r.lifeMu.Unlock()
+	defer cancel()
 
 	for {
 		// Jittered next-tick so independently-started routers desync.
@@ -199,7 +212,7 @@ func (r *routerImpl) Start(ctx context.Context) error {
 		timer := time.NewTimer(next)
 
 		select {
-		case <-r.startCtx.Done():
+		case <-runCtx.Done():
 			timer.Stop()
 			return nil
 		case <-timer.C:
@@ -261,8 +274,11 @@ func (r *routerImpl) Stop() error {
 	if !r.stopped.CompareAndSwap(false, true) {
 		return nil
 	}
-	if r.startCancel != nil {
-		r.startCancel()
+	r.lifeMu.Lock()
+	cancel := r.startCancel
+	r.lifeMu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 	return nil
 }
