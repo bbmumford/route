@@ -35,23 +35,23 @@ const (
 // one (origin,target,epoch), replay across different pairs is impossible.
 type PathAdvertisement struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	Origin           []byte                 `protobuf:"bytes,1,opt,name=origin,proto3" json:"origin,omitempty"`                                                // who is advertising
-	Target           []byte                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`                                                // the destination peer
-	Hops             [][]byte               `protobuf:"bytes,3,rep,name=hops,proto3" json:"hops,omitempty"`                                                    // intermediate NodeIDs (excludes origin + target)
-	RttSampleMs      uint32                 `protobuf:"varint,4,opt,name=rtt_sample_ms,json=rttSampleMs,proto3" json:"rtt_sample_ms,omitempty"`                // observed RTT from origin to target via this path
-	Epoch            uint64                 `protobuf:"varint,5,opt,name=epoch,proto3" json:"epoch,omitempty"`                                                 // advertisement epoch (monotonic per Origin)
-	Communities      []string               `protobuf:"bytes,6,rep,name=communities,proto3" json:"communities,omitempty"`                                      // tag-style metadata
-	IssuedAt         int64                  `protobuf:"varint,7,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`                           // unix nanoseconds
-	Network          string                 `protobuf:"bytes,8,opt,name=network,proto3" json:"network,omitempty"`                                              // network scope (empty = fleet-wide)
-	NodeIdSignature  []byte                 `protobuf:"bytes,9,opt,name=node_id_signature,json=nodeIdSignature,proto3" json:"node_id_signature,omitempty"`     // Ed25519 over wire-format excluding signatures
-	PathKeySignature []byte                 `protobuf:"bytes,10,opt,name=path_key_signature,json=pathKeySignature,proto3" json:"path_key_signature,omitempty"` // Ed25519 over same envelope, by per-path key
-	// pub_key is the Origin's Ed25519 public key. Required because NodeIDs in
+	Origin           []byte                 `protobuf:"bytes,1,opt,name=origin,proto3" json:"origin,omitempty"`                      // who is advertising
+	Target           []byte                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`                      // the destination peer
+	Hops             [][]byte               `protobuf:"bytes,3,rep,name=hops,proto3" json:"hops,omitempty"`                          // intermediate NodeIDs (excludes origin + target)
+	RttSampleMs      uint32                 `protobuf:"varint,4,opt,name=rttSampleMs,proto3" json:"rttSampleMs,omitempty"`           // observed RTT from origin to target via this path
+	Epoch            uint64                 `protobuf:"varint,5,opt,name=epoch,proto3" json:"epoch,omitempty"`                       // advertisement epoch (monotonic per Origin)
+	Communities      []string               `protobuf:"bytes,6,rep,name=communities,proto3" json:"communities,omitempty"`            // tag-style metadata
+	IssuedAt         int64                  `protobuf:"varint,7,opt,name=issuedAt,proto3" json:"issuedAt,omitempty"`                 // unix nanoseconds
+	Network          string                 `protobuf:"bytes,8,opt,name=network,proto3" json:"network,omitempty"`                    // network scope (empty = fleet-wide)
+	NodeIdSignature  []byte                 `protobuf:"bytes,9,opt,name=nodeIdSignature,proto3" json:"nodeIdSignature,omitempty"`    // Ed25519 over wire-format excluding signatures
+	PathKeySignature []byte                 `protobuf:"bytes,10,opt,name=pathKeySignature,proto3" json:"pathKeySignature,omitempty"` // Ed25519 over same envelope, by per-path key
+	// pubKey is the Origin's Ed25519 public key. Required because NodeIDs in
 	// this codebase are one-way SHA-256 fingerprints (vl1_<hex>) — the verifier
 	// cannot derive the public key from the NodeID alone. Sender stamps this
-	// before signing; signing input MUST include pub_key to close the rebind
-	// attack (an attacker who swaps pub_key + re-signs with their own key would
+	// before signing; signing input MUST include pubKey to close the rebind
+	// attack (an attacker who swaps pubKey + re-signs with their own key would
 	// otherwise produce a valid signature). See ledger v0.0.15 SignRecord fix.
-	PubKey        []byte `protobuf:"bytes,11,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
+	PubKey        []byte `protobuf:"bytes,11,opt,name=pubKey,proto3" json:"pubKey,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -169,10 +169,10 @@ type PathWithdrawal struct {
 	Origin        []byte                 `protobuf:"bytes,1,opt,name=origin,proto3" json:"origin,omitempty"`
 	Target        []byte                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
 	Epoch         uint64                 `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	IssuedAt      int64                  `protobuf:"varint,4,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	IssuedAt      int64                  `protobuf:"varint,4,opt,name=issuedAt,proto3" json:"issuedAt,omitempty"`
 	Network       string                 `protobuf:"bytes,5,opt,name=network,proto3" json:"network,omitempty"`
-	Signature     []byte                 `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"`         // Ed25519 by origin
-	PubKey        []byte                 `protobuf:"bytes,7,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"` // Origin's Ed25519 public key — see PathAdvertisement.pub_key
+	Signature     []byte                 `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"` // Ed25519 by origin
+	PubKey        []byte                 `protobuf:"bytes,7,opt,name=pubKey,proto3" json:"pubKey,omitempty"`       // Origin's Ed25519 public key — see PathAdvertisement.pubKey
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -265,7 +265,7 @@ type DampingState struct {
 	Network       string                 `protobuf:"bytes,3,opt,name=network,proto3" json:"network,omitempty"`
 	Penalty       uint32                 `protobuf:"varint,4,opt,name=penalty,proto3" json:"penalty,omitempty"` // RFC2439 accumulated penalty
 	Suppressed    bool                   `protobuf:"varint,5,opt,name=suppressed,proto3" json:"suppressed,omitempty"`
-	LastFlap      int64                  `protobuf:"varint,6,opt,name=last_flap,json=lastFlap,proto3" json:"last_flap,omitempty"`
+	LastFlap      int64                  `protobuf:"varint,6,opt,name=lastFlap,proto3" json:"lastFlap,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -346,28 +346,28 @@ var File_route_proto protoreflect.FileDescriptor
 
 const file_route_proto_rawDesc = "" +
 	"\n" +
-	"\vroute.proto\x12\broute.v1\"\xdd\x02\n" +
+	"\vroute.proto\x12\broute.v1\"\xd5\x02\n" +
 	"\x11PathAdvertisement\x12\x16\n" +
 	"\x06origin\x18\x01 \x01(\fR\x06origin\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\fR\x06target\x12\x12\n" +
-	"\x04hops\x18\x03 \x03(\fR\x04hops\x12\"\n" +
-	"\rrtt_sample_ms\x18\x04 \x01(\rR\vrttSampleMs\x12\x14\n" +
+	"\x04hops\x18\x03 \x03(\fR\x04hops\x12 \n" +
+	"\vrttSampleMs\x18\x04 \x01(\rR\vrttSampleMs\x12\x14\n" +
 	"\x05epoch\x18\x05 \x01(\x04R\x05epoch\x12 \n" +
-	"\vcommunities\x18\x06 \x03(\tR\vcommunities\x12\x1b\n" +
-	"\tissued_at\x18\a \x01(\x03R\bissuedAt\x12\x18\n" +
-	"\anetwork\x18\b \x01(\tR\anetwork\x12*\n" +
-	"\x11node_id_signature\x18\t \x01(\fR\x0fnodeIdSignature\x12,\n" +
-	"\x12path_key_signature\x18\n" +
-	" \x01(\fR\x10pathKeySignature\x12\x17\n" +
-	"\apub_key\x18\v \x01(\fR\x06pubKey\"\xc4\x01\n" +
+	"\vcommunities\x18\x06 \x03(\tR\vcommunities\x12\x1a\n" +
+	"\bissuedAt\x18\a \x01(\x03R\bissuedAt\x12\x18\n" +
+	"\anetwork\x18\b \x01(\tR\anetwork\x12(\n" +
+	"\x0fnodeIdSignature\x18\t \x01(\fR\x0fnodeIdSignature\x12*\n" +
+	"\x10pathKeySignature\x18\n" +
+	" \x01(\fR\x10pathKeySignature\x12\x16\n" +
+	"\x06pubKey\x18\v \x01(\fR\x06pubKey\"\xc2\x01\n" +
 	"\x0ePathWithdrawal\x12\x16\n" +
 	"\x06origin\x18\x01 \x01(\fR\x06origin\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\fR\x06target\x12\x14\n" +
-	"\x05epoch\x18\x03 \x01(\x04R\x05epoch\x12\x1b\n" +
-	"\tissued_at\x18\x04 \x01(\x03R\bissuedAt\x12\x18\n" +
+	"\x05epoch\x18\x03 \x01(\x04R\x05epoch\x12\x1a\n" +
+	"\bissuedAt\x18\x04 \x01(\x03R\bissuedAt\x12\x18\n" +
 	"\anetwork\x18\x05 \x01(\tR\anetwork\x12\x1c\n" +
-	"\tsignature\x18\x06 \x01(\fR\tsignature\x12\x17\n" +
-	"\apub_key\x18\a \x01(\fR\x06pubKey\"\xaf\x01\n" +
+	"\tsignature\x18\x06 \x01(\fR\tsignature\x12\x16\n" +
+	"\x06pubKey\x18\a \x01(\fR\x06pubKey\"\xae\x01\n" +
 	"\fDampingState\x12\x16\n" +
 	"\x06origin\x18\x01 \x01(\fR\x06origin\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\fR\x06target\x12\x18\n" +
@@ -375,8 +375,8 @@ const file_route_proto_rawDesc = "" +
 	"\apenalty\x18\x04 \x01(\rR\apenalty\x12\x1e\n" +
 	"\n" +
 	"suppressed\x18\x05 \x01(\bR\n" +
-	"suppressed\x12\x1b\n" +
-	"\tlast_flap\x18\x06 \x01(\x03R\blastFlapB%Z#github.com/bbmumford/route/proto/pbb\x06proto3"
+	"suppressed\x12\x1a\n" +
+	"\blastFlap\x18\x06 \x01(\x03R\blastFlapB%Z#github.com/bbmumford/route/proto/pbb\x06proto3"
 
 var (
 	file_route_proto_rawDescOnce sync.Once
