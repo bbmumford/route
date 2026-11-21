@@ -39,9 +39,16 @@ type routerImpl struct {
 	priv    ed25519.PrivateKey
 	localID NodeID
 
-	mu         sync.RWMutex
-	paths      map[pathKey]*Path    // current valid paths
-	damp       map[pathKey]*damping // damping state per origin/target/network
+	mu    sync.RWMutex
+	paths map[pathKey]*Path    // current valid paths
+	damp  map[pathKey]*damping // damping state per origin/target/network
+
+	// localEpoch is the last epoch this router stamped on an advertisement or
+	// withdrawal. NewRouter seeds it from the wall clock in nanoseconds, so
+	// every epoch a restarted router issues orders after every epoch its
+	// previous incarnation issued: IngestAdvertisement and IngestWithdrawal
+	// refuse an epoch at or below the last one a receiver holds for the
+	// (origin, target, network), and that state outlives the origin's process.
 	localEpoch atomic.Uint64
 	transit    atomic.Uint32
 
@@ -113,14 +120,16 @@ func NewRouter(cfg Config) (Router, error) {
 	}
 	applyDefaults(&cfg)
 
-	return &routerImpl{
+	r := &routerImpl{
 		cfg:     cfg,
 		priv:    cfg.PrivKey,
 		localID: cfg.NodeID,
 		paths:   make(map[pathKey]*Path),
 		damp:    make(map[pathKey]*damping),
 		netCtx:  cfg.NetworkContext,
-	}, nil
+	}
+	r.localEpoch.Store(uint64(time.Now().UnixNano()))
+	return r, nil
 }
 
 func applyDefaults(cfg *Config) {
