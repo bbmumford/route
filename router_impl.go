@@ -335,12 +335,13 @@ func (r *routerImpl) Withdraw(target NodeID, network NetworkID) error {
 	return nil
 }
 
-// BestPath returns the best current path to target across all networks
-// the local node belongs to, falling back to fleet-wide paths.
+// BestPath returns the best current path to target among the fleet-wide
+// paths and the paths scoped to a network the local node is a member of
+// (NetworkContext.LocalNetworks; none when no provider is set).
 func (r *routerImpl) BestPath(target NodeID) *Path {
-	networks := []NetworkID{""}
+	var networks []NetworkID
 	if r.netCtx != nil {
-		networks = append(networks, r.netCtx.LocalNetworks()...)
+		networks = r.netCtx.LocalNetworks()
 	}
 
 	r.mu.RLock()
@@ -602,8 +603,9 @@ func powHalf(x float64) float64 {
 	return out
 }
 
-// networkMatch returns true if pathNet matches any of the local node's
-// networks. Fleet-wide paths (Network == "") match every local context.
+// networkMatch reports whether a path scoped to pathNet is usable by a node
+// that is a member of locals. A fleet-wide path (Network == "") is usable by
+// every node; a network-scoped path only by a member of that network.
 func networkMatch(pathNet NetworkID, locals []NetworkID) bool {
 	if pathNet == "" {
 		return true
@@ -611,9 +613,6 @@ func networkMatch(pathNet NetworkID, locals []NetworkID) bool {
 	for _, n := range locals {
 		if n == pathNet {
 			return true
-		}
-		if n == "" {
-			return true // fleet context accepts every network
 		}
 	}
 	return false

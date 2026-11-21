@@ -44,6 +44,7 @@ func makeNode(t *testing.T) (NodeID, ed25519.PrivateKey) {
 
 func TestRouter_AdvertiseAndBestPath(t *testing.T) {
 	r := newTestRouter(t)
+	r.netCtx = staticNetworks{"tenant-1"}
 	target, _ := makeNode(t)
 	hop, _ := makeNode(t)
 
