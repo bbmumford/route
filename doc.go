@@ -16,9 +16,9 @@
 //   - BestPathInNetwork(target, network) — agent multi-network variant
 //
 // Best-path selection follows a simplified RFC4271 §9.1:
-//   1. Lowest hop count
-//   2. Lowest RTT
-//   3. Lexicographically smallest NodeID (deterministic tie-break)
+//  1. Lowest hop count
+//  2. Lowest RTT
+//  3. Lexicographically smallest NodeID (deterministic tie-break)
 //
 // RFC2439 damping is applied to suppress flapping paths.
 package route

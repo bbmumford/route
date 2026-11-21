@@ -21,14 +21,14 @@ type NetworkID string
 // PathKeySignature (signed by a per-path key derived via
 // HKDF-SHA256(node-identity, "route-path-v1" || Origin || Target || Epoch)).
 type PathAdvertisement struct {
-	Origin       NodeID    // who is advertising
-	Target       NodeID    // the destination peer
-	Hops         []NodeID  // intermediate NodeIDs (excludes origin + target)
-	RTTSampleMs  uint32    // observed RTT from origin to target via this path
-	Epoch        uint64    // advertisement epoch (monotonic per Origin)
-	Communities  []string  // tag-style metadata (e.g. "relay:tier2", "transit:full")
-	IssuedAt     time.Time
-	Network      NetworkID // network scope (empty = fleet-wide)
+	Origin      NodeID   // who is advertising
+	Target      NodeID   // the destination peer
+	Hops        []NodeID // intermediate NodeIDs (excludes origin + target)
+	RTTSampleMs uint32   // observed RTT from origin to target via this path
+	Epoch       uint64   // advertisement epoch (monotonic per Origin)
+	Communities []string // tag-style metadata (e.g. "relay:tier2", "transit:full")
+	IssuedAt    time.Time
+	Network     NetworkID // network scope (empty = fleet-wide)
 
 	NodeIDSignature  []byte // Ed25519 over wire-format excluding signatures
 	PathKeySignature []byte // Ed25519 over same envelope, by per-path key
@@ -55,21 +55,21 @@ type PathWithdrawal struct {
 
 // Path represents a selected path in the forwarding table. Not a wire format.
 type Path struct {
-	Target     NodeID
-	NextHop    NodeID    // who to dial first; if equal to Target this is a direct path
-	Hops       []NodeID  // full path including target
+	Target      NodeID
+	NextHop     NodeID   // who to dial first; if equal to Target this is a direct path
+	Hops        []NodeID // full path including target
 	RTTSampleMs uint32
-	Origin     NodeID
-	Network    NetworkID
+	Origin      NodeID
+	Network     NetworkID
 }
 
 // TransitMode controls how this Router participates in transit forwarding.
 type TransitMode uint8
 
 const (
-	TransitNone    TransitMode = iota // do not forward for others
-	TransitOptIn                       // forward only for explicitly allowed peers (edge nodes)
-	TransitFull                        // forward for all peers in same tenant (anchor / relay)
+	TransitNone  TransitMode = iota // do not forward for others
+	TransitOptIn                    // forward only for explicitly allowed peers (edge nodes)
+	TransitFull                     // forward for all peers in same tenant (anchor / relay)
 )
 
 // Router is the public route API.
@@ -112,15 +112,15 @@ type Router interface {
 
 // Config configures a Router.
 type Config struct {
-	NodeID     NodeID
-	PrivKey    ed25519.PrivateKey
-	Transit    TransitMode
-	MaxHops    int // default 8
-	MaxPaths   int // default 4 paths per target
-	DampSuppress  uint32 // RFC2439 suppress threshold (default 2000)
-	DampReuse     uint32 // RFC2439 reuse threshold (default 750)
-	DampMaxPenalty uint32 // RFC2439 max penalty (default 16000)
-	DampHalfLife  time.Duration // RFC2439 half-life (default 15min)
+	NodeID         NodeID
+	PrivKey        ed25519.PrivateKey
+	Transit        TransitMode
+	MaxHops        int           // default 8
+	MaxPaths       int           // default 4 paths per target
+	DampSuppress   uint32        // RFC2439 suppress threshold (default 2000)
+	DampReuse      uint32        // RFC2439 reuse threshold (default 750)
+	DampMaxPenalty uint32        // RFC2439 max penalty (default 16000)
+	DampHalfLife   time.Duration // RFC2439 half-life (default 15min)
 	NetworkContext NetworkContextProvider
 }
 
@@ -138,11 +138,11 @@ func New(cfg Config) (Router, error) {
 }
 
 var (
-	ErrNotImplemented      = errors.New("route: not implemented")
-	ErrSignatureInvalid    = errors.New("route: signature verification failed")
-	ErrPathLoop            = errors.New("route: path contains loop")
-	ErrPathTooLong         = errors.New("route: path exceeds MaxHops")
-	ErrStaleAdvertisement  = errors.New("route: advertisement epoch is stale")
-	ErrPathSuppressed      = errors.New("route: path is currently suppressed by damping")
-	errInvalidConfig       = errors.New("route: invalid config (NodeID and PrivKey required)")
+	ErrNotImplemented     = errors.New("route: not implemented")
+	ErrSignatureInvalid   = errors.New("route: signature verification failed")
+	ErrPathLoop           = errors.New("route: path contains loop")
+	ErrPathTooLong        = errors.New("route: path exceeds MaxHops")
+	ErrStaleAdvertisement = errors.New("route: advertisement epoch is stale")
+	ErrPathSuppressed     = errors.New("route: path is currently suppressed by damping")
+	errInvalidConfig      = errors.New("route: invalid config (NodeID and PrivKey required)")
 )

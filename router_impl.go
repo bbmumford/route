@@ -26,11 +26,11 @@ type pathKey struct {
 
 // damping carries RFC2439 flap-damping state per pathKey.
 type damping struct {
-	penalty     uint32
-	suppressed  bool
-	lastFlap    time.Time
-	lastDecay   time.Time
-	lastEpoch   uint64
+	penalty    uint32
+	suppressed bool
+	lastFlap   time.Time
+	lastDecay  time.Time
+	lastEpoch  uint64
 }
 
 // routerImpl is the concrete Router implementation.
@@ -39,11 +39,11 @@ type routerImpl struct {
 	priv    ed25519.PrivateKey
 	localID NodeID
 
-	mu        sync.RWMutex
-	paths     map[pathKey]*Path        // current valid paths
-	damp      map[pathKey]*damping     // damping state per origin/target/network
+	mu         sync.RWMutex
+	paths      map[pathKey]*Path    // current valid paths
+	damp       map[pathKey]*damping // damping state per origin/target/network
 	localEpoch atomic.Uint64
-	transit   atomic.Uint32
+	transit    atomic.Uint32
 
 	startCtx    context.Context
 	startCancel context.CancelFunc
@@ -165,13 +165,13 @@ const (
 
 // Start runs the background reconvergence loop until ctx is cancelled.
 // Every reconvergeInterval (jittered) it:
-//   1. Decays damping penalty for every tracked pathKey so suppressed
-//      entries eventually become eligible again under the RFC2439 reuse
-//      threshold.
-//   2. Re-emits Advertise for every locally-originated, non-suppressed
-//      path. Closes the gap where a peer joined just after we last
-//      published and the swarm anti-entropy gossip hasn't caught it yet,
-//      or where the originating Advertise raced an empty publisher.
+//  1. Decays damping penalty for every tracked pathKey so suppressed
+//     entries eventually become eligible again under the RFC2439 reuse
+//     threshold.
+//  2. Re-emits Advertise for every locally-originated, non-suppressed
+//     path. Closes the gap where a peer joined just after we last
+//     published and the swarm anti-entropy gossip hasn't caught it yet,
+//     or where the originating Advertise raced an empty publisher.
 //
 // Lock discipline: snapshot the (target, network) pairs to re-emit under
 // r.mu, then drop the lock before calling Advertise — Advertise itself
@@ -618,6 +618,7 @@ func sortPaths(paths []*Path) {
 //	rtt:u32 || epoch:u64 || issued_at:i64 ||
 //	communities_count:u16 || (comm_len:u16 || comm)* ||
 //	network_len:u16 || network
+//
 // signableAdvertisement now includes PubKey to close the rebind attack
 // (an attacker who swaps PubKey + re-signs would otherwise produce a
 // valid signature). PubKey MUST be set by the signer before this runs.
