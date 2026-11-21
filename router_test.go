@@ -250,12 +250,19 @@ func TestRouter_DampingSuppression(t *testing.T) {
 
 	target, _ := makeNode(t)
 	originNode, originPriv := makeNode(t)
+	hop, _ := makeNode(t)
 
-	// Flap repeatedly to accumulate penalty.
+	// Flap repeatedly to accumulate penalty: each advertisement changes the
+	// path's hops, which a refresh of the same path does not.
 	for i := uint64(1); i <= 4; i++ {
+		var hops []NodeID
+		if i%2 == 0 {
+			hops = []NodeID{hop}
+		}
 		ad := &PathAdvertisement{
 			Origin:   originNode,
 			Target:   target,
+			Hops:     hops,
 			Epoch:    i,
 			IssuedAt: time.Now(),
 		}

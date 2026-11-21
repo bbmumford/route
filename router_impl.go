@@ -462,8 +462,15 @@ func (r *routerImpl) IngestAdvertisement(ad *PathAdvertisement) error {
 	// must not silence local truths.
 	selfDirectEdge := ad.Origin == r.localID && len(ad.Hops) == 0
 
-	// Penalty: bump for every new advertisement after the first.
-	if state.lastEpoch > 0 && !selfDirectEdge {
+	// Penalty: bump for a flap, the path returning after a withdrawal or its
+	// hops or RTT changing. A refresh of the held path (a new epoch with the
+	// same hops and RTT) is not a flap: reconvergeOnce re-advertises every
+	// locally originated path each reconvergeInterval, and counting those
+	// refreshes would suppress at every receiver the stable paths it keeps
+	// alive.
+	held := r.paths[key]
+	flap := held == nil || !sameRoute(held, ad)
+	if state.lastEpoch > 0 && !selfDirectEdge && flap {
 		state.penalty += 1000
 		if state.penalty > r.cfg.DampMaxPenalty {
 			state.penalty = r.cfg.DampMaxPenalty
@@ -514,6 +521,21 @@ func (r *routerImpl) IngestWithdrawal(w *PathWithdrawal) error {
 	}
 	delete(r.paths, key)
 	return nil
+}
+
+// sameRoute reports whether ad carries the forwarding attributes p holds: the
+// same hops to the same target and the same RTT sample, the fields pathBetter
+// selects on. A Path holds no communities, so they are not compared.
+func sameRoute(p *Path, ad *PathAdvertisement) bool {
+	if p.RTTSampleMs != ad.RTTSampleMs || len(p.Hops) != len(ad.Hops)+1 {
+		return false
+	}
+	for i, h := range ad.Hops {
+		if p.Hops[i] != h {
+			return false
+		}
+	}
+	return p.Hops[len(ad.Hops)] == ad.Target
 }
 
 // containsLoop reports whether hops + target contain the local node.
