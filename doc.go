@@ -1,5 +1,5 @@
-// Copyright (c) 2026 HSTLES / ORBTR Pty Ltd. All Rights Reserved.
-// Queries: licensing@hstles.com
+// Copyright (c) 2026 Brandon Miller-Mumford.
+// Licensed under the MIT License; see LICENSE.
 
 // Package route implements BGP-style path advertisement and best-path
 // selection across the HSTLES fleet mesh and the ORBTR agent mesh.
