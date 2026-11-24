@@ -106,8 +106,10 @@ type Router interface {
 	// given network. Used by agent multi-network fabric.
 	BestPathInNetwork(target NodeID, network NetworkID) *Path
 
-	// AllPaths returns every current path to target, ordered by selection
-	// preference. Useful for debugging and for callers that want fallback.
+	// AllPaths returns every current path to target that BestPath could
+	// choose (fleet-wide, or in a network the local node is a member of),
+	// ordered by selection preference. Useful for debugging and for callers
+	// that want fallback.
 	AllPaths(target NodeID) []*Path
 
 	// SetTransitMode atomically updates this Router's transit policy.

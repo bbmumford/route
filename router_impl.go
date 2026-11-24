@@ -434,14 +434,24 @@ func (r *routerImpl) BestPathInNetwork(target NodeID, network NetworkID) *Path {
 }
 
 // AllPaths returns every current path to target ordered by selection
-// preference. Suppressed paths are omitted.
+// preference, among the paths BestPath chooses from: the fleet-wide paths and
+// those scoped to a network the local node is a member of. Suppressed paths
+// are omitted.
 func (r *routerImpl) AllPaths(target NodeID) []*Path {
+	var networks []NetworkID
+	if r.netCtx != nil {
+		networks = r.netCtx.LocalNetworks()
+	}
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	var out []*Path
 	for k, p := range r.paths {
 		if k.Target != target {
+			continue
+		}
+		if !networkMatch(k.Network, networks) {
 			continue
 		}
 		if r.damp[k] != nil && r.damp[k].suppressed {
