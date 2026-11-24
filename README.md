@@ -18,8 +18,10 @@ How a router decides:
   target, when it has more hops than `MaxHops` (default 8), when its public key
   does not hash to the origin's NodeID (a `vl1_` fingerprint of the Ed25519
   key, the form aether uses), or when the origin's signature fails. Each
-  advertisement also carries a second signature made with a per-path key
-  derived from the origin's key; receivers do not check it yet.
+  advertisement also carries a per-path public key, covered by the origin's
+  signature, and a second signature made with that per-path key; it is
+  accepted only when that signature verifies, and one with no path signature
+  is refused.
 - **Epochs.** A router seeds its epoch counter from the clock when it starts,
   so a restarted node's advertisements order after the ones it sent before.
   A receiver refuses an epoch at or below the last one it holds for that
@@ -68,7 +70,8 @@ if p := r.BestPath(target); p != nil {
 }
 ```
 
-`AllPaths` lists every held path to a target in selection order, `Withdraw`
+`AllPaths` lists, in selection order, every held path to a target that
+`BestPath` could choose (fleet-wide paths and paths in the node's networks), `Withdraw`
 originates a withdrawal, and `SetTransitMode` records the node's transit
 policy (`TransitNone`, `TransitOptIn`, `TransitFull`). The router returned by
 `NewRouter` also has `Stats`, the counters of its `Advertise` calls (locally
