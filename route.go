@@ -61,6 +61,9 @@ type Path struct {
 	RTTSampleMs uint32
 	Origin      NodeID
 	Network     NetworkID
+	// Communities are the advertisement's communities, kept so the origin's
+	// periodic re-advertisement carries them as the first one did.
+	Communities []string
 }
 
 // TransitMode controls how this Router participates in transit forwarding.

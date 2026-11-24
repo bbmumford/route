@@ -226,9 +226,10 @@ func (r *routerImpl) Start(ctx context.Context) error {
 // Start so unit tests can drive it directly without running the timer.
 func (r *routerImpl) reconvergeOnce() {
 	type reemit struct {
-		target  NodeID
-		network NetworkID
-		hops    []NodeID
+		target      NodeID
+		network     NetworkID
+		hops        []NodeID
+		communities []string
 	}
 
 	r.mu.Lock()
@@ -257,16 +258,17 @@ func (r *routerImpl) reconvergeOnce() {
 			hops = hops[:len(hops)-1]
 		}
 		pending = append(pending, reemit{
-			target:  k.Target,
-			network: k.Network,
-			hops:    append([]NodeID(nil), hops...),
+			target:      k.Target,
+			network:     k.Network,
+			hops:        append([]NodeID(nil), hops...),
+			communities: append([]string(nil), p.Communities...),
 		})
 	}
 	r.mu.Unlock()
 
 	// Re-emit outside the lock — Advertise takes r.mu itself.
 	for _, e := range pending {
-		_ = r.Advertise(e.target, e.hops, e.network)
+		_ = r.Advertise(e.target, e.hops, e.network, e.communities...)
 	}
 }
 
@@ -516,6 +518,7 @@ func (r *routerImpl) IngestAdvertisement(ad *PathAdvertisement) error {
 		RTTSampleMs: ad.RTTSampleMs,
 		Origin:      ad.Origin,
 		Network:     ad.Network,
+		Communities: append([]string(nil), ad.Communities...),
 	}
 	return nil
 }
@@ -540,12 +543,17 @@ func (r *routerImpl) IngestWithdrawal(w *PathWithdrawal) error {
 	return nil
 }
 
-// sameRoute reports whether ad carries the forwarding attributes p holds: the
-// same hops to the same target and the same RTT sample, the fields pathBetter
-// selects on. A Path holds no communities, so they are not compared.
+// sameRoute reports whether ad carries the attributes p holds: the same hops
+// to the same target and the same RTT sample, the fields pathBetter selects
+// on, and the same communities, in order.
 func sameRoute(p *Path, ad *PathAdvertisement) bool {
-	if p.RTTSampleMs != ad.RTTSampleMs || len(p.Hops) != len(ad.Hops)+1 {
+	if p.RTTSampleMs != ad.RTTSampleMs || len(p.Hops) != len(ad.Hops)+1 || len(p.Communities) != len(ad.Communities) {
 		return false
+	}
+	for i, c := range ad.Communities {
+		if p.Communities[i] != c {
+			return false
+		}
 	}
 	for i, h := range ad.Hops {
 		if p.Hops[i] != h {
