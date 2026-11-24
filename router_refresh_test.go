@@ -36,16 +36,26 @@ func TestRouter_RefreshOfAnUnchangedRemotePathIsNotDamped(t *testing.T) {
 
 func signedAd(priv ed25519.PrivateKey, origin, target NodeID, hops []NodeID, epoch uint64) *PathAdvertisement {
 	ad := &PathAdvertisement{Origin: origin, Target: target, Hops: hops, Epoch: epoch, IssuedAt: time.Now()}
-	ad.PubKey = priv.Public().(ed25519.PublicKey)
-	ad.NodeIDSignature = ed25519.Sign(priv, signableAdvertisement(ad))
+	resignAd(priv, ad)
 	return ad
 }
 
 func signedWithdrawal(priv ed25519.PrivateKey, origin, target NodeID, epoch uint64) *PathWithdrawal {
 	w := &PathWithdrawal{Origin: origin, Target: target, Epoch: epoch, IssuedAt: time.Now()}
+	resignWithdrawal(priv, w)
+	return w
+}
+
+// resignAd signs ad again after a test changes a signed field.
+func resignAd(priv ed25519.PrivateKey, ad *PathAdvertisement) {
+	ad.PubKey = priv.Public().(ed25519.PublicKey)
+	ad.NodeIDSignature = ed25519.Sign(priv, signableAdvertisement(ad))
+}
+
+// resignWithdrawal signs w again after a test changes a signed field.
+func resignWithdrawal(priv ed25519.PrivateKey, w *PathWithdrawal) {
 	w.PubKey = priv.Public().(ed25519.PublicKey)
 	w.Signature = ed25519.Sign(priv, signableWithdrawal(w))
-	return w
 }
 
 // A path withdrawn and advertised again is a flap: three returns after

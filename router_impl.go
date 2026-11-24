@@ -24,13 +24,27 @@ type pathKey struct {
 	Network NetworkID
 }
 
-// damping carries RFC2439 flap-damping state per pathKey.
+// damping carries RFC2439 flap-damping state per pathKey. lastSeen is when an
+// advertisement or withdrawal for the key last arrived; reconvergeOnce evicts
+// the state of a key that holds no path, carries no penalty and has been quiet
+// for dampRetention.
 type damping struct {
 	penalty    uint32
 	suppressed bool
 	lastFlap   time.Time
 	lastDecay  time.Time
 	lastEpoch  uint64
+	lastSeen   time.Time
+}
+
+// dampRetention is how long the damping state of a key with no path and no
+// penalty is kept, and the age past which an advertisement or withdrawal is
+// refused as stale: once a key's state is evicted its lastEpoch is gone, so a
+// message older than the retention, which that epoch would have refused, must
+// be refused by its age instead. Twice the damping half-life, far past the
+// reconvergeInterval at which a live origin re-advertises.
+func (r *routerImpl) dampRetention() time.Duration {
+	return 2 * r.cfg.DampHalfLife
 }
 
 // routerImpl is the concrete Router implementation.
@@ -234,9 +248,16 @@ func (r *routerImpl) reconvergeOnce() {
 
 	r.mu.Lock()
 	// Decay every damping entry; suppressed entries that fall below the
-	// RFC2439 reuse threshold flip back to usable inside decayPenalty.
-	for _, d := range r.damp {
+	// RFC2439 reuse threshold flip back to usable inside decayPenalty. An
+	// entry whose key holds no path, whose penalty has decayed away and which
+	// has been quiet for dampRetention is evicted, so the keys any
+	// self-certified origin mints do not stay for the router's life.
+	now := time.Now()
+	for k, d := range r.damp {
 		r.decayPenalty(d)
+		if _, held := r.paths[k]; !held && d.penalty == 0 && !d.suppressed && now.Sub(d.lastSeen) > r.dampRetention() {
+			delete(r.damp, k)
+		}
 	}
 
 	// Snapshot the locally-originated, non-suppressed paths. We re-emit
@@ -453,6 +474,9 @@ func (r *routerImpl) IngestAdvertisement(ad *PathAdvertisement) error {
 	if !verifyAdvertisement(ad) {
 		return ErrSignatureInvalid
 	}
+	if time.Since(ad.IssuedAt) > r.dampRetention() {
+		return ErrStaleAdvertisement
+	}
 
 	key := pathKey{Origin: ad.Origin, Target: ad.Target, Network: ad.Network}
 
@@ -464,6 +488,7 @@ func (r *routerImpl) IngestAdvertisement(ad *PathAdvertisement) error {
 		state = &damping{lastDecay: time.Now(), lastFlap: time.Now()}
 		r.damp[key] = state
 	}
+	state.lastSeen = time.Now()
 	r.decayPenalty(state)
 
 	if ad.Epoch <= state.lastEpoch && state.lastEpoch != 0 {
@@ -531,13 +556,19 @@ func (r *routerImpl) IngestWithdrawal(w *PathWithdrawal) error {
 	if !verifyWithdrawal(w) {
 		return ErrSignatureInvalid
 	}
+	if time.Since(w.IssuedAt) > r.dampRetention() {
+		return ErrStaleAdvertisement
+	}
 	key := pathKey{Origin: w.Origin, Target: w.Target, Network: w.Network}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if state, ok := r.damp[key]; ok && w.Epoch <= state.lastEpoch {
-		// Stale withdrawal.
-		return ErrStaleAdvertisement
+	if state, ok := r.damp[key]; ok {
+		if w.Epoch <= state.lastEpoch {
+			// Stale withdrawal.
+			return ErrStaleAdvertisement
+		}
+		state.lastSeen = time.Now()
 	}
 	delete(r.paths, key)
 	return nil
