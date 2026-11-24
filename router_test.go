@@ -159,9 +159,7 @@ func TestRouter_PreferFewerHops(t *testing.T) {
 		Epoch:    1,
 		IssuedAt: time.Now(),
 	}
-	ad.PubKey = peerPriv.Public().(ed25519.PublicKey)
-	signable := signableAdvertisement(ad)
-	ad.NodeIDSignature = ed25519.Sign(peerPriv, signable)
+	resignAd(peerPriv, ad)
 	if err := r.IngestAdvertisement(ad); err != nil {
 		t.Fatalf("ingest direct ad: %v", err)
 	}
@@ -191,8 +189,7 @@ func TestRouter_PreferLowerRTT(t *testing.T) {
 		Epoch:       1,
 		IssuedAt:    time.Now(),
 	}
-	fast.PubKey = fastPriv.Public().(ed25519.PublicKey)
-	fast.NodeIDSignature = ed25519.Sign(fastPriv, signableAdvertisement(fast))
+	resignAd(fastPriv, fast)
 
 	slow := &PathAdvertisement{
 		Origin:      slowNode,
@@ -202,8 +199,7 @@ func TestRouter_PreferLowerRTT(t *testing.T) {
 		Epoch:       1,
 		IssuedAt:    time.Now(),
 	}
-	slow.PubKey = slowPriv.Public().(ed25519.PublicKey)
-	slow.NodeIDSignature = ed25519.Sign(slowPriv, signableAdvertisement(slow))
+	resignAd(slowPriv, slow)
 
 	if err := r.IngestAdvertisement(slow); err != nil {
 		t.Fatalf("slow: %v", err)
@@ -234,8 +230,7 @@ func TestRouter_VerifyBadSignature(t *testing.T) {
 	}
 	// Sign with a key that doesn't match the origin NodeID.
 	_, attackerPriv, _ := ed25519.GenerateKey(rand.Reader)
-	ad.PubKey = attackerPriv.Public().(ed25519.PublicKey)
-	ad.NodeIDSignature = ed25519.Sign(attackerPriv, signableAdvertisement(ad))
+	resignAd(attackerPriv, ad)
 
 	err := r.IngestAdvertisement(ad)
 	if !errors.Is(err, ErrSignatureInvalid) {
@@ -267,8 +262,7 @@ func TestRouter_DampingSuppression(t *testing.T) {
 			Epoch:    i,
 			IssuedAt: time.Now(),
 		}
-		ad.PubKey = originPriv.Public().(ed25519.PublicKey)
-		ad.NodeIDSignature = ed25519.Sign(originPriv, signableAdvertisement(ad))
+		resignAd(originPriv, ad)
 		_ = r.IngestAdvertisement(ad)
 	}
 
@@ -298,14 +292,12 @@ func TestRouter_NetworkScope(t *testing.T) {
 
 	// Advertisement on tenant-1.
 	adA := &PathAdvertisement{Origin: originA, Target: target, Epoch: 1, IssuedAt: time.Now(), Network: "tenant-1"}
-	adA.PubKey = privA.Public().(ed25519.PublicKey)
-	adA.NodeIDSignature = ed25519.Sign(privA, signableAdvertisement(adA))
+	resignAd(privA, adA)
 	_ = r.IngestAdvertisement(adA)
 
 	// Advertisement on tenant-2.
 	adB := &PathAdvertisement{Origin: originB, Target: target, Epoch: 1, IssuedAt: time.Now(), Network: "tenant-2"}
-	adB.PubKey = privB.Public().(ed25519.PublicKey)
-	adB.NodeIDSignature = ed25519.Sign(privB, signableAdvertisement(adB))
+	resignAd(privB, adB)
 	_ = r.IngestAdvertisement(adB)
 
 	// Scoped lookup: only tenant-1 path returned.
@@ -336,8 +328,7 @@ func TestRouter_StaleEpoch(t *testing.T) {
 
 	for _, ep := range []uint64{5, 3} {
 		ad := &PathAdvertisement{Origin: origin, Target: target, Epoch: ep, IssuedAt: time.Now()}
-		ad.PubKey = priv.Public().(ed25519.PublicKey)
-		ad.NodeIDSignature = ed25519.Sign(priv, signableAdvertisement(ad))
+		resignAd(priv, ad)
 		err := r.IngestAdvertisement(ad)
 		if ep == 3 && !errors.Is(err, ErrStaleAdvertisement) {
 			t.Errorf("expected ErrStaleAdvertisement for epoch 3 after 5, got %v", err)

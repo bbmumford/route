@@ -724,6 +724,7 @@ func signableAdvertisement(ad *PathAdvertisement) []byte {
 	}
 	buf = appendLenString(buf, string(ad.Network))
 	buf = appendLenBytes(buf, ad.PubKey)
+	buf = appendLenBytes(buf, ad.PathPubKey)
 	return buf
 }
 
@@ -738,21 +739,23 @@ func signableWithdrawal(w *PathWithdrawal) []byte {
 	return buf
 }
 
-// signAdvertisement stamps PubKey + fills in both signatures. PubKey is
-// assigned BEFORE signableAdvertisement runs so the signed bytes cover
-// the pubkey. This mirrors the SignRecord field-ordering fix (ledger
+// signAdvertisement stamps PubKey and PathPubKey and fills in both
+// signatures. Both keys are assigned BEFORE signableAdvertisement runs so
+// the signed bytes cover them. This mirrors the SignRecord field-ordering fix (ledger
 // v0.0.15) — a sender that hashes a record where len(PubKey)==0 then
 // stamps PubKey afterward produces bytes the verifier can't reproduce.
 func (r *routerImpl) signAdvertisement(ad *PathAdvertisement) {
+	pathKey := derivePathKey(r.priv, ad.Origin, ad.Target, ad.Epoch)
 	ad.PubKey = []byte(r.priv.Public().(ed25519.PublicKey))
+	ad.PathPubKey = []byte(pathKey.Public().(ed25519.PublicKey))
 	signable := signableAdvertisement(ad)
 	ad.NodeIDSignature = ed25519.Sign(r.priv, signable)
-
-	pathKey := derivePathKey(r.priv, ad.Origin, ad.Target, ad.Epoch)
 	ad.PathKeySignature = ed25519.Sign(pathKey, signable)
 }
 
-// verifyAdvertisement validates both signatures. Uses the PubKey
+// verifyAdvertisement validates both signatures: NodeIDSignature under
+// PubKey, and PathKeySignature under PathPubKey, which the node signature
+// covers; an advertisement missing either is refused. Uses the PubKey
 // embedded on the wire — NodeIDs in this codebase are one-way SHA-256
 // fingerprints (vl1_<encoded>), so the verifier cannot derive the
 // public key from the NodeID. To prevent an attacker from claiming an
@@ -781,13 +784,10 @@ func verifyAdvertisement(ad *PathAdvertisement) bool {
 		return false
 	}
 
-	// Path-key signature: tamper-evidence check; cannot reconstruct the
-	// per-path keypair from the publisher-only private key. Optional
-	// until per-path public keys ship via PeerRecord.
-	if len(ad.PathKeySignature) == 0 {
-		return true
+	if len(ad.PathPubKey) != ed25519.PublicKeySize || len(ad.PathKeySignature) != ed25519.SignatureSize {
+		return false
 	}
-	return true
+	return ed25519.Verify(ed25519.PublicKey(ad.PathPubKey), signable, ad.PathKeySignature)
 }
 
 func (r *routerImpl) signWithdrawal(w *PathWithdrawal) {

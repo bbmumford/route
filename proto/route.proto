@@ -35,6 +35,9 @@ message PathAdvertisement {
   // attack (an attacker who swaps pubKey + re-signs with their own key would
   // otherwise produce a valid signature). See ledger v0.0.15 SignRecord fix.
   bytes pubKey = 11;
+  // pathPubKey is the per-path key's public key, which pathKeySignature
+  // verifies under; signed with pubKey under nodeIdSignature.
+  bytes pathPubKey = 12;
 }
 
 // PathWithdrawal removes a previously-advertised path.

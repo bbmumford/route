@@ -46,10 +46,14 @@ func signedWithdrawal(priv ed25519.PrivateKey, origin, target NodeID, epoch uint
 	return w
 }
 
-// resignAd signs ad again after a test changes a signed field.
+// resignAd signs ad again after a test changes a signed field, with both the
+// node key and the per-path key.
 func resignAd(priv ed25519.PrivateKey, ad *PathAdvertisement) {
+	pathKey := derivePathKey(priv, ad.Origin, ad.Target, ad.Epoch)
 	ad.PubKey = priv.Public().(ed25519.PublicKey)
+	ad.PathPubKey = pathKey.Public().(ed25519.PublicKey)
 	ad.NodeIDSignature = ed25519.Sign(priv, signableAdvertisement(ad))
+	ad.PathKeySignature = ed25519.Sign(pathKey, signableAdvertisement(ad))
 }
 
 // resignWithdrawal signs w again after a test changes a signed field.

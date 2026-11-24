@@ -19,7 +19,9 @@ type NetworkID string
 // PathAdvertisement is the wire representation of a route advertisement.
 // Dual-signed: NodeIDSignature (signed by Origin's node identity) AND
 // PathKeySignature (signed by a per-path key derived via
-// HKDF-SHA256(node-identity, "route-path-v1" || Origin || Target || Epoch)).
+// HKDF-SHA256(node-identity, "route-path-v1" || Origin || Target || Epoch)),
+// whose public half PathPubKey the advertisement carries under the node
+// signature, so a receiver checks both.
 type PathAdvertisement struct {
 	Origin      NodeID   // who is advertising
 	Target      NodeID   // the destination peer
@@ -39,6 +41,11 @@ type PathAdvertisement struct {
 	// Stamped by signAdvertisement BEFORE the signature input is computed
 	// so signableAdvertisement covers PubKey (closes the rebind attack).
 	PubKey []byte
+
+	// PathPubKey is the per-path key's Ed25519 public key, which
+	// PathKeySignature verifies under. Stamped with PubKey before the
+	// signature input is computed, so the node signature binds it.
+	PathPubKey []byte
 }
 
 // PathWithdrawal removes a previously-advertised path. Sent when Origin

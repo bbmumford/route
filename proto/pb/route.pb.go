@@ -51,7 +51,10 @@ type PathAdvertisement struct {
 	// before signing; signing input MUST include pubKey to close the rebind
 	// attack (an attacker who swaps pubKey + re-signs with their own key would
 	// otherwise produce a valid signature). See ledger v0.0.15 SignRecord fix.
-	PubKey        []byte `protobuf:"bytes,11,opt,name=pubKey,proto3" json:"pubKey,omitempty"`
+	PubKey []byte `protobuf:"bytes,11,opt,name=pubKey,proto3" json:"pubKey,omitempty"`
+	// pathPubKey is the per-path key's public key, which pathKeySignature
+	// verifies under; signed with pubKey under nodeIdSignature.
+	PathPubKey    []byte `protobuf:"bytes,12,opt,name=pathPubKey,proto3" json:"pathPubKey,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -159,6 +162,13 @@ func (x *PathAdvertisement) GetPathKeySignature() []byte {
 func (x *PathAdvertisement) GetPubKey() []byte {
 	if x != nil {
 		return x.PubKey
+	}
+	return nil
+}
+
+func (x *PathAdvertisement) GetPathPubKey() []byte {
+	if x != nil {
+		return x.PathPubKey
 	}
 	return nil
 }
@@ -346,7 +356,7 @@ var File_route_proto protoreflect.FileDescriptor
 
 const file_route_proto_rawDesc = "" +
 	"\n" +
-	"\vroute.proto\x12\broute.v1\"\xd5\x02\n" +
+	"\vroute.proto\x12\broute.v1\"\xf5\x02\n" +
 	"\x11PathAdvertisement\x12\x16\n" +
 	"\x06origin\x18\x01 \x01(\fR\x06origin\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\fR\x06target\x12\x12\n" +
@@ -359,7 +369,10 @@ const file_route_proto_rawDesc = "" +
 	"\x0fnodeIdSignature\x18\t \x01(\fR\x0fnodeIdSignature\x12*\n" +
 	"\x10pathKeySignature\x18\n" +
 	" \x01(\fR\x10pathKeySignature\x12\x16\n" +
-	"\x06pubKey\x18\v \x01(\fR\x06pubKey\"\xc2\x01\n" +
+	"\x06pubKey\x18\v \x01(\fR\x06pubKey\x12\x1e\n" +
+	"\n" +
+	"pathPubKey\x18\f \x01(\fR\n" +
+	"pathPubKey\"\xc2\x01\n" +
 	"\x0ePathWithdrawal\x12\x16\n" +
 	"\x06origin\x18\x01 \x01(\fR\x06origin\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\fR\x06target\x12\x14\n" +
