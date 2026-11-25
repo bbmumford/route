@@ -18,7 +18,10 @@ func startRouter(r *routerImpl) <-chan error {
 func waitStart(t *testing.T, done <-chan error, what string) {
 	t.Helper()
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Start returned %v after %s, want nil", err, what)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatalf("Start still running 2s after %s", what)
 	}
