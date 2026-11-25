@@ -771,9 +771,7 @@ func (r *routerImpl) signAdvertisement(ad *PathAdvertisement) {
 // public key from the NodeID. To prevent an attacker from claiming an
 // arbitrary Origin NodeID + stamping their own PubKey + signing with
 // their own key, we re-derive the expected NodeID from PubKey and
-// reject when it doesn't match ad.Origin. This restores the
-// binding lost when the original pubFromNodeID(hex) assumption was
-// abandoned.
+// reject when it doesn't match ad.Origin.
 func verifyAdvertisement(ad *PathAdvertisement) bool {
 	if len(ad.PubKey) != ed25519.PublicKeySize {
 		return false
@@ -856,38 +854,6 @@ func derivePathKey(nodePriv ed25519.PrivateKey, origin, target NodeID, epoch uin
 		return nil
 	}
 	return ed25519.NewKeyFromSeed(seed)
-}
-
-// pubFromNodeID extracts the Ed25519 public key embedded in a NodeID.
-// NodeID is hex(pubkey) — 64 chars.
-func pubFromNodeID(id NodeID) (ed25519.PublicKey, bool) {
-	s := string(id)
-	if len(s) != 2*ed25519.PublicKeySize {
-		return nil, false
-	}
-	pub := make([]byte, ed25519.PublicKeySize)
-	for i := 0; i < ed25519.PublicKeySize; i++ {
-		hi, ok1 := hexNibble(s[2*i])
-		lo, ok2 := hexNibble(s[2*i+1])
-		if !ok1 || !ok2 {
-			return nil, false
-		}
-		pub[i] = (hi << 4) | lo
-	}
-	return pub, true
-}
-
-func hexNibble(c byte) (byte, bool) {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0', true
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10, true
-	case c >= 'A' && c <= 'F':
-		return c - 'A' + 10, true
-	default:
-		return 0, false
-	}
 }
 
 // ---------- encoding helpers ----------
